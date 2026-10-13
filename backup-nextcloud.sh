@@ -11,6 +11,16 @@ umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 ENV_FILE="${SCRIPT_DIR}/.env"
+
+if [[ ! -r "$ENV_FILE" ]]; then
+    echo "ERREUR : fichier absent ou illisible : $ENV_FILE" >&2
+    exit 1
+fi
+
+source "$ENV_FILE"
+
+
+
 EXCLUDE_FILE="${SCRIPT_DIR}/nextcloud-exclude.txt"
 
 export RCLONE_CONFIG="${SCRIPT_DIR}/rclone.conf"
@@ -68,13 +78,6 @@ esac
 # ENVIRONNEMENT ET JOURNALISATION
 ###############################################################################
 
-if [[ ! -r "$ENV_FILE" ]]; then
-    echo "ERREUR : fichier absent ou illisible : $ENV_FILE" >&2
-    exit 1
-fi
-
-source "$ENV_FILE"
-
 # Utiliser explicitement le fichier de configuration rclone de root.
 export RCLONE_CONFIG="${RCLONE_CONFIG:-/root/.config/rclone/rclone.conf}"
 
@@ -120,15 +123,18 @@ check_ds212() {
 }
 
 check_scaleway() {
+
+    local rclone_config="$1"
+
     echo "Vérification du remote Scaleway..."
 
-    if ! rclone lsd "${SCW_REMOTE}:" >/dev/null; then
+    if ! rclone --config "$rclone_config" lsd "${SCW_REMOTE}:" >/dev/null; then
         echo "ERREUR : remote Scaleway inaccessible."
         return 1
     fi
 
     # Vérifier que le bucket cible existe et est accessible.
-    if ! rclone lsf "${SCW_REMOTE}:${SCW_BUCKET}" \
+    if ! rclone --config "$rclone_config" lsf "${SCW_REMOTE}:${SCW_BUCKET}" \
         --max-depth 1 >/dev/null; then
         echo "ERREUR : bucket Scaleway inaccessible : ${SCW_BUCKET}"
         return 1
@@ -263,7 +269,7 @@ rclone_config_scaleway() {
     cat <<EOF
 [${SCW_REMOTE}]
 type = s3
-provider = Other
+provider = Scaleway
 env_auth = true
 region = ${SCW_REGION}
 endpoint = ${SCW_ENDPOINT}
@@ -280,10 +286,12 @@ backup_scaleway() {
     rclone_tmp="$(mktemp)"
     chmod 600 "$rclone_tmp"
     rclone_config_scaleway > "$rclone_tmp"
+	
+    echo "$rclone_tmp"
 
     # Scaleway utilise exclusivement le backup local déjà réalisé.
     check_ds212
-    check_scaleway
+    check_scaleway "$rclone_tmp"
 
     if [[ ! -d "$BACKUP/files" || ! -d "$BACKUP/database" ]]; then
         echo "ERREUR : backup DS212 incomplet ou absent."
@@ -292,23 +300,25 @@ backup_scaleway() {
 
     echo "Copie des fichiers du DS212 vers Scaleway..."
 
-    rclone copy \
+    rclone sync \
         "$BACKUP/files" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/files" \
-        --s3-storage-class "$SCW_STORAGE_CLASS"
+        --backup-dir "${SCW:REMOTE}:deleted/$DATE/files" \
+        --s3-storage-class "$SCW_STORAGE_CLASS" \
         --create-empty-src-dirs \
         --log-level INFO \
-        --stats 30s
+        --stats 30s \
         --config "$rclone_tmp"
 
     echo "Copie des dumps MariaDB vers Scaleway..."
 
-    rclone copy \
+    rclone sync \
         "$BACKUP/database" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/database" \
-        --s3-storage-class "$SCW_STORAGE_CLASS"
+        --backup-dir "${SCW:REMOTE}:deleted/$DATE/database" \
+	--s3-storage-class "$SCW_STORAGE_CLASS" \
         --log-level INFO \
-        --stats 30s
+        --stats 30s \
         --config "$rclone_tmp"
 
     rm -f "$rclone_tmp"
