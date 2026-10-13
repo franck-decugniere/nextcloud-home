@@ -25,9 +25,14 @@ LOCK="/run/lock/nextcloud-backup.lock"
 
 DATE="$(date '+%Y-%m-%d_%H-%M-%S')"
 
-SCW_REMOTE="scaleway"
-SCW_BUCKET="nextcloud-backup"
-SCW_PATH="nextcloud"
+SCW_REMOTE="${SCW_REMOTE:-scaleway}"
+SCW_BUCKET="${SCW_BUCKET:-nextcloud-backup}"
+SCW_PATH="${SCW_PATH:-nextcloud}"
+SCW_STORAGE_CLASS="${SCW_STORAGE_CLASS:-GLACIER}"
+
+export AWS_ACCESS_KEY_ID="$SCW_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$SCW_SECRET_KEY"
+
 
 ###############################################################################
 # AIDE ET PARAMETRE
@@ -254,9 +259,27 @@ backup_ds212() {
     echo "Backup DS212 terminé."
 }
 
+rclone_config_scaleway() {
+    cat <<EOF
+[${SCW_REMOTE}]
+type = s3
+provider = Other
+env_auth = true
+region = ${SCW_REGION}
+endpoint = ${SCW_ENDPOINT}
+acl = private
+EOF
+}
+
 backup_scaleway() {
     echo
     echo "========== BACKUP VERS SCALEWAY GLACIER =========="
+
+    # Configuration temporaire rclone
+    local rclone_tmp
+    rclone_tmp="$(mktemp)"
+    chmod 600 "$rclone_tmp"
+    rclone_config_scaleway > "$rclone_tmp"
 
     # Scaleway utilise exclusivement le backup local déjà réalisé.
     check_ds212
@@ -272,20 +295,23 @@ backup_scaleway() {
     rclone copy \
         "$BACKUP/files" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/files" \
-        --s3-storage-class GLACIER \
+        --s3-storage-class "$SCW_STORAGE_CLASS"
         --create-empty-src-dirs \
-        --modify-window 1s \
         --log-level INFO \
         --stats 30s
+        --config "$rclone_tmp"
 
     echo "Copie des dumps MariaDB vers Scaleway..."
 
     rclone copy \
         "$BACKUP/database" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/database" \
-        --s3-storage-class GLACIER \
+        --s3-storage-class "$SCW_STORAGE_CLASS"
         --log-level INFO \
         --stats 30s
+        --config "$rclone_tmp"
+
+    rm -f "$rclone_tmp"
 
     echo "Copie Scaleway terminée."
 }
