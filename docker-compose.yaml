@@ -1,0 +1,139 @@
+services:
+
+  mariadb:
+    image: mariadb:11.8
+    container_name: nextcloud-db
+    restart: unless-stopped
+
+    command:
+      - --transaction-isolation=READ-COMMITTED
+      - --binlog-format=ROW
+      - --innodb-file-per-table=1
+      - --skip-innodb-read-only-compressed
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+    volumes:
+      - /mnt/storage/nextcloud/db:/var/lib/mysql
+
+    networks:
+      - backend
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "healthcheck.sh",
+          "--connect",
+          "--innodb_initialized"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+
+    volumes:
+      - /mnt/storage/nextcloud/redis:/data
+
+    networks:
+      - backend
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  nextcloud:
+    image: nextcloud:stable-apache
+    container_name: nextcloud
+    restart: unless-stopped
+
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    environment:
+      MYSQL_HOST: mariadb
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+      REDIS_HOST: redis
+
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS}
+
+      OVERWRITEHOST: ${OVERWRITEHOST}
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: ${OVERWRITECLIURL}
+
+      TRUSTED_PROXIES: 172.30.0.10
+
+      PHP_MEMORY_LIMIT: 1G
+      PHP_UPLOAD_LIMIT: 10G
+
+    volumes:
+      - /mnt/storage/nextcloud/config:/var/www/html/config
+      - /mnt/storage/nextcloud/data:/var/www/html/data
+      - /mnt/storage/nextcloud/custom_apps:/var/www/html/custom_apps
+
+    networks:
+      - proxy
+      - backend
+
+
+  caddy:
+    image: caddybuilds/caddy-cloudflare:latest
+    container_name: caddy
+    restart: unless-stopped
+
+    ports:
+      - "8443:443"
+
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      EMAIL: ${EMAIL}
+      OVERWRITECLIURL: ${OVERWRITECLIURL}
+
+    volumes:
+      - /mnt/storage/caddy/data:/data
+      - /mnt/storage/caddy/config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+    networks:
+      proxy:
+        ipv4_address: 172.30.0.10
+
+    depends_on:
+      - nextcloud
+
+
+networks:
+
+  proxy:
+    driver: bridge
+
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+  backend:
+    driver: bridge
+    internal: true

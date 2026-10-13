@@ -1,0 +1,40 @@
+{
+    email {env.EMAIL} 
+
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+
+    servers {
+        trusted_proxies static 173.245.48.0/20
+        trusted_proxies static 103.21.244.0/22
+        trusted_proxies static 103.22.200.0/22
+        trusted_proxies static 103.31.4.0/22
+        trusted_proxies static 141.101.64.0/18
+        trusted_proxies static 108.162.192.0/18
+        trusted_proxies static 190.93.240.0/20
+        trusted_proxies static 188.114.96.0/20
+        trusted_proxies static 197.234.240.0/22
+        trusted_proxies static 198.41.128.0/17
+
+        trusted_proxies static 2400:cb00::/32
+        trusted_proxies static 2606:4700::/32
+        trusted_proxies static 2803:f800::/32
+        trusted_proxies static 2405:b500::/32
+        trusted_proxies static 2405:8100::/32
+        trusted_proxies static 2a06:98c0::/29
+        trusted_proxies static 2c0f:f248::/32
+
+        trusted_proxies_strict
+        client_ip_headers CF-Connecting-IP
+    }
+}
+
+
+https://nextcloud.decugniere.fr {
+
+    encode zstd gzip
+
+    redir /.well-known/carddav /remote.php/dav 301
+    redir /.well-known/caldav /remote.php/dav 301
+
+    reverse_proxy nextcloud:80
+}
