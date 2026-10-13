@@ -132,6 +132,52 @@ check_scaleway() {
     echo "Scaleway accessible."
 }
 
+NEXTCLOUD_CONTAINER="nextcloud"
+NEXTCLOUD_MAINTENANCE=0
+
+nextcloud_maintenance_on() {
+    if ! docker ps --format '{{.Names}}' | grep -Fxq "$NEXTCLOUD_CONTAINER"; then
+        echo "Conteneur $NEXTCLOUD_CONTAINER non démarré : pas de basculement en mode maintenance."
+        return 0
+    fi
+
+    echo "Mise en mode maintenance Nextcloud..."
+    if ! docker exec --user www-data "$NEXTCLOUD_CONTAINER" \
+        php /var/www/html/occ maintenance:mode --on; then
+        echo "ERREUR : impossible de mettre Nextcloud en mode maintenance."
+        return 1
+    fi
+
+    NEXTCLOUD_MAINTENANCE=1
+    echo "Nextcloud est désormais en mode maintenance."
+}
+
+nextcloud_maintenance_off() {
+    if [[ "$NEXTCLOUD_MAINTENANCE" -ne 1 ]]; then
+        return 0
+    fi
+
+    echo "Sortie du mode maintenance Nextcloud..."
+    if ! docker exec --user www-data "$NEXTCLOUD_CONTAINER" \
+        php /var/www/html/occ maintenance:mode --off; then
+        echo "ATTENTION : impossible de sortir Nextcloud du mode maintenance."
+        return 1
+    fi
+
+    NEXTCLOUD_MAINTENANCE=0
+    echo "Nextcloud est de nouveau disponible."
+}
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [[ "$NEXTCLOUD_MAINTENANCE" -eq 1 ]]; then
+        nextcloud_maintenance_off || true
+    fi
+    return "$exit_code"
+}
+
+trap cleanup_on_exit EXIT
+
 backup_ds212() {
     echo
     echo "========== BACKUP VERS DS212 =========="
@@ -147,6 +193,7 @@ backup_ds212() {
     fi
 
     check_ds212
+    nextcloud_maintenance_on || return 1
 
     mkdir -p \
         "$BACKUP/files" \
