@@ -1,0 +1,6 @@
+appdata_ocqydkxei9et/**
+/db/**
+/redis/**
+custom_apps/**
+*.log
+files/config/**

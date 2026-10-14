@@ -1,2 +1,3 @@
 appdata_ocqydkxei9et/**
 /db/**
+/redis/**

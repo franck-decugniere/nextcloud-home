@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
@@ -21,7 +20,9 @@ source "$ENV_FILE"
 
 
 
-EXCLUDE_FILE="${SCRIPT_DIR}/nextcloud-exclude.txt"
+DS212_EXCLUDE_FILE="${SCRIPT_DIR}/ds212-exclude.txt"
+SCALEWAY_EXCLUDE_FILE="${SCRIPT_DIR}/scaleway-exclude.txt"
+
 
 export RCLONE_CONFIG="${SCRIPT_DIR}/rclone.conf"
 
@@ -198,8 +199,8 @@ backup_ds212() {
         return 1
     fi
 
-    if [[ ! -f "$EXCLUDE_FILE" ]]; then
-        echo "ERREUR : fichier d'exclusion absent : $EXCLUDE_FILE"
+    if [[ ! -f "$DS212_EXCLUDE_FILE" ]]; then
+        echo "ERREUR : fichier d'exclusion absent : $DS212_EXCLUDE_FILE"
         return 1
     fi
 
@@ -255,7 +256,7 @@ backup_ds212() {
     rclone sync \
         "$SOURCE" \
         "$BACKUP/files" \
-        --exclude-from "$EXCLUDE_FILE" \
+        --exclude-from "$DS212_EXCLUDE_FILE" \
         --backup-dir "$BACKUP/deleted/$DATE" \
         --create-empty-src-dirs \
         --modify-window 1s \
@@ -303,7 +304,8 @@ backup_scaleway() {
     rclone sync \
         "$BACKUP/files" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/files" \
-        --backup-dir "${SCW:REMOTE}:deleted/$DATE/files" \
+	--exclude-from "$SCALEWAY_EXCLUDE_FILE" \
+	--no-update-modtime \
         --s3-storage-class "$SCW_STORAGE_CLASS" \
         --create-empty-src-dirs \
         --log-level INFO \
@@ -315,7 +317,8 @@ backup_scaleway() {
     rclone sync \
         "$BACKUP/database" \
         "${SCW_REMOTE}:${SCW_BUCKET}/${SCW_PATH}/database" \
-        --backup-dir "${SCW:REMOTE}:deleted/$DATE/database" \
+	--exclude-from "$SCALEWAY_EXCLUDE_FILE" \
+	--no-update-modtime \
 	--s3-storage-class "$SCW_STORAGE_CLASS" \
         --log-level INFO \
         --stats 30s \
